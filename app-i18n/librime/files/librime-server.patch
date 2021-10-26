@@ -1,0 +1,188 @@
+diff --git a/tools/CMakeLists.txt b/tools/CMakeLists.txt
+index 4ea9241..fa5280a 100644
+--- a/tools/CMakeLists.txt
++++ b/tools/CMakeLists.txt
+@@ -11,6 +11,10 @@ set(rime_api_console_src "rime_api_console.cc")
+ add_executable(rime_api_console ${rime_api_console_src})
+ target_link_libraries(rime_api_console ${rime_console_deps})
+ 
++set(rime_server_src "rime_server.cc")
++add_executable(rime_server ${rime_server_src})
++target_link_libraries(rime_server ${rime_console_deps})
++
+ set(CAPNPC_IMPORT_DIRS ${CAPNPC_IMPORT_DIRS} ${RIME_PROTO_SCHEMA_DIR})
+ capnp_generate_cpp(CAPNP_SRCS CAPNP_HDRS rime_message.capnp)
+ message(STATUS "compiled capnproto schemata (sources): ${CAPNP_SRCS}")
+@@ -54,12 +58,16 @@ target_link_libraries(rime_deployer
+   ${rime_dict_library}
+   ${rime_levers_library})
+ 
++install(TARGETS rime_console DESTINATION ${BIN_INSTALL_DIR})
++install(TARGETS rime_proto_console DESTINATION ${BIN_INSTALL_DIR})
+ install(TARGETS rime_deployer DESTINATION ${BIN_INSTALL_DIR})
+ install(TARGETS rime_dict_manager DESTINATION ${BIN_INSTALL_DIR})
+ 
+ endif()
+ 
+ install(TARGETS rime_patch DESTINATION ${BIN_INSTALL_DIR})
++install(TARGETS rime_api_console DESTINATION ${BIN_INSTALL_DIR})
++install(TARGETS rime_server DESTINATION ${BIN_INSTALL_DIR})
+ 
+ file(COPY ${PROJECT_SOURCE_DIR}/data/minimal/default.yaml
+      DESTINATION ${EXECUTABLE_OUTPUT_PATH})
+diff --git a/tools/rime_server.cc b/tools/rime_server.cc
+new file mode 100644
+index 0000000..5da9ea1
+--- /dev/null
++++ b/tools/rime_server.cc
+@@ -0,0 +1,149 @@
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <rime_api.h>
++#include <boost/filesystem.hpp>
++
++#include <sys/socket.h>
++#include <unistd.h>
++#include <stdlib.h>
++#include <netinet/in.h>
++#include <string.h>
++
++#include <iostream>
++
++#define READ_BUFFER_SIZE 1024
++#define KEY_BUFFER_SIZE 128
++
++char *header = 
++"HTTP/1.1 200 OK\r\n"
++"Content-Type: text/html; charset=UTF-8\r\n"
++"Access-Control-Allow-Origin: *\r\n";
++
++void on_message(void* context_object,
++                RimeSessionId session_id,
++                const char* message_type,
++                const char* message_value) {
++  printf("message: [%lu] [%s] %s\n", session_id, message_type, message_value);
++}
++
++void handle_request(int client_fd, RimeApi *rime) {
++  RimeSessionId session_id = rime->create_session();
++
++  char read_buff[READ_BUFFER_SIZE];
++  char key_buff[KEY_BUFFER_SIZE];
++  int key_size = 0;
++  int read_bytes = recv(client_fd, read_buff, READ_BUFFER_SIZE, 0);
++  read_buff[read_bytes] = '\0';
++  int body_size = 0;
++  bool ix_body_start = false;
++  
++  for (int i=0; i < read_bytes-3; i++) {
++    if (ix_body_start) {
++      if (1) {
++        key_buff[key_size] = read_buff[i+3];
++        key_size += 1;
++      }
++    } else if (
++      read_buff[i] == '\r' && read_buff[i+1] == '\n'
++      && read_buff[i+2] == '\r' && read_buff[i+3] == '\n'
++      ) {
++      ix_body_start = true;
++    }
++  }
++  key_buff[key_size] = '\0';
++
++  rime->simulate_key_sequence(session_id, key_buff);
++  send(client_fd, header, strlen(header), 0);
++  send(client_fd, "\r\n", 2, 0);
++
++  RIME_STRUCT(RimeContext, context);
++  rime->get_context(session_id, &context);
++
++  if (context.composition.length > 0) {
++    const char *preedit = context.composition.preedit;
++    if (preedit) {
++      char current[100] = {0};
++      rime->get_current_schema(session_id, current, sizeof(current));
++      if (strstr(current, "double_pinyin"))
++      {
++        for (int i = 0; i < key_size-1; i++) {
++          send(client_fd, &key_buff[i], 1, 0);
++          if (i % 2 == 1) {
++            send(client_fd, " ", 1, 0);
++          }
++        }
++        send(client_fd, &key_buff[key_size-1], 1, 0);
++      } else {
++        send(client_fd, preedit, strlen(preedit), 0);    
++      }
++      send(client_fd, "\n", 1, 0);
++    }
++  }
++  rime->free_context(&context);
++
++  RimeCandidateListIterator iterator = {0};
++  if (rime->candidate_list_begin(session_id, &iterator)) {
++    int count = 0;
++    while (rime->candidate_list_next(&iterator) && count < 100) {
++      send(client_fd, iterator.candidate.text, strlen(iterator.candidate.text), 0);
++      send(client_fd, "\n", 1, 0);
++      count += 1;
++    }
++    rime->candidate_list_end(&iterator);
++  }
++
++  rime->destroy_session(session_id);
++}
++
++RIME_API RimeApi *RimeInit(int argc, char *argv[]){
++  RimeApi *rime = rime_get_api();
++
++  RIME_STRUCT(RimeTraits, traits);
++  traits.app_name = "rime.server";
++    traits.user_data_dir = argv[1];
++    traits.shared_data_dir = argv[1];
++
++  rime->setup(&traits);
++
++  rime->set_notification_handler(&on_message, NULL);
++  rime->initialize(NULL);
++  Bool full_check = True;
++  if (rime->start_maintenance(full_check))
++    rime->join_maintenance_thread();
++
++  return rime;
++}
++
++int main(int argc, char *argv[]){
++  RimeApi *rime = RimeInit(argc, argv);
++
++  int port = 12345;
++
++  int server_fd = socket(AF_INET, SOCK_STREAM, 0);
++  if (server_fd < 0)
++    return -1;
++
++  struct sockaddr_in sa;
++  int addrlen = sizeof(sa);
++  sa.sin_family = AF_INET;
++  sa.sin_port = htons(port);
++  sa.sin_addr.s_addr = htons(INADDR_ANY);
++
++  int opt_val = 1;
++  setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof opt_val);
++  if (bind(server_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0)
++    return -1;
++  if (listen(server_fd, SOMAXCONN) < 0)
++    return -1;
++
++  int client_fd;
++
++  while (true)
++  {
++    client_fd = accept(server_fd, (struct sockaddr *)&sa, (socklen_t *)&addrlen);
++    handle_request(client_fd, rime);
++    close(client_fd);
++  }
++  return 0;
++}
+\ No newline at end of file
