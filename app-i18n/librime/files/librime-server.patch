@@ -32,68 +32,78 @@ index 4ea9241..fa5280a 100644
       DESTINATION ${EXECUTABLE_OUTPUT_PATH})
 diff --git a/tools/rime_server.cc b/tools/rime_server.cc
 new file mode 100644
-index 0000000..5da9ea1
+index 0000000..4482e81
 --- /dev/null
 +++ b/tools/rime_server.cc
-@@ -0,0 +1,149 @@
+@@ -0,0 +1,424 @@
++#include <math.h>
 +#include <stdio.h>
 +#include <stdlib.h>
 +#include <string.h>
 +#include <rime_api.h>
++#include <rime/config.h>
++#include <rime/deployer.h>
++#include <rime/lever/deployment_tasks.h>
++
++
++
 +#include <boost/filesystem.hpp>
 +
 +#include <sys/socket.h>
 +#include <unistd.h>
-+#include <stdlib.h>
 +#include <netinet/in.h>
 +#include <string.h>
-+
 +#include <iostream>
++
++using namespace rime;
 +
 +#define READ_BUFFER_SIZE 1024
 +#define KEY_BUFFER_SIZE 128
++
++#define CANDIDATES_SIZE 100
++
++#define SCHEMA_ID_SIZE 64
++#define FILE_PATH_SIZE 256
++#define ALGEBRA_ITEM_SIZE 64
++
++int CANDIDATES_INDEX_BUFFER_SIZE = (int)(log10(CANDIDATES_SIZE) + 2);
++
++const char* derive = "derive";
 +
 +char *header = 
 +"HTTP/1.1 200 OK\r\n"
 +"Content-Type: text/html; charset=UTF-8\r\n"
 +"Access-Control-Allow-Origin: *\r\n";
 +
-+void on_message(void* context_object,
-+                RimeSessionId session_id,
-+                const char* message_type,
-+                const char* message_value) {
-+  printf("message: [%lu] [%s] %s\n", session_id, message_type, message_value);
++int get_algebra(char *fp) {
++  Config c;
++  c.LoadFromFile(fp);
++
++  ConfigMapEntryRef schema_list(c["patch"]["speller/algebra"]);
++  for (size_t j = 0; j < schema_list.size(); ++j){
++    fprintf(stderr, " %s \n", schema_list[j].ToString().c_str());
++  }
++  return 0;
++}
++int add_algebra(char *fp, char * item) {
++  return 0;
 +}
 +
-+void handle_request(int client_fd, RimeApi *rime) {
-+  RimeSessionId session_id = rime->create_session();
-+
-+  char read_buff[READ_BUFFER_SIZE];
-+  char key_buff[KEY_BUFFER_SIZE];
-+  int key_size = 0;
-+  int read_bytes = recv(client_fd, read_buff, READ_BUFFER_SIZE, 0);
-+  read_buff[read_bytes] = '\0';
-+  int body_size = 0;
-+  bool ix_body_start = false;
-+  
-+  for (int i=0; i < read_bytes-3; i++) {
-+    if (ix_body_start) {
-+      if (1) {
-+        key_buff[key_size] = read_buff[i+3];
-+        key_size += 1;
-+      }
-+    } else if (
-+      read_buff[i] == '\r' && read_buff[i+1] == '\n'
-+      && read_buff[i+2] == '\r' && read_buff[i+3] == '\n'
-+      ) {
-+      ix_body_start = true;
-+    }
++int set_active_schema(const string& schema_id) {
++  Config config;
++  if (!config.LoadFromFile("user.yaml")) {
++    LOG(INFO) << "creating new file 'user.yaml'.";
 +  }
-+  key_buff[key_size] = '\0';
++  config["var"]["previously_selected_schema"] = schema_id;
++  if (!config.SaveToFile("user.yaml")) {
++    LOG(ERROR) << "failed to set active schema: " << schema_id;
++    return 1;
++  }
++  return 0;
++}
 +
++void send_candidates(int client_fd, RimeApi *rime, RimeSessionId session_id, char *key_buff) {
 +  rime->simulate_key_sequence(session_id, key_buff);
-+  send(client_fd, header, strlen(header), 0);
-+  send(client_fd, "\r\n", 2, 0);
 +
 +  RIME_STRUCT(RimeContext, context);
 +  rime->get_context(session_id, &context);
@@ -101,17 +111,17 @@ index 0000000..5da9ea1
 +  if (context.composition.length > 0) {
 +    const char *preedit = context.composition.preedit;
 +    if (preedit) {
-+      char current[100] = {0};
++      char current[SCHEMA_ID_SIZE] = {0};
 +      rime->get_current_schema(session_id, current, sizeof(current));
 +      if (strstr(current, "double_pinyin"))
 +      {
-+        for (int i = 0; i < key_size-1; i++) {
++        for (int i = 0; i < strlen(key_buff)-1; i++) {
 +          send(client_fd, &key_buff[i], 1, 0);
 +          if (i % 2 == 1) {
 +            send(client_fd, " ", 1, 0);
 +          }
 +        }
-+        send(client_fd, &key_buff[key_size-1], 1, 0);
++        send(client_fd, &key_buff[strlen(key_buff)-1], 1, 0);
 +      } else {
 +        send(client_fd, preedit, strlen(preedit), 0);    
 +      }
@@ -123,44 +133,304 @@ index 0000000..5da9ea1
 +  RimeCandidateListIterator iterator = {0};
 +  if (rime->candidate_list_begin(session_id, &iterator)) {
 +    int count = 0;
-+    while (rime->candidate_list_next(&iterator) && count < 100) {
++    while (rime->candidate_list_next(&iterator) && count < CANDIDATES_SIZE) {
 +      send(client_fd, iterator.candidate.text, strlen(iterator.candidate.text), 0);
 +      send(client_fd, "\n", 1, 0);
 +      count += 1;
 +    }
 +    rime->candidate_list_end(&iterator);
 +  }
-+
-+  rime->destroy_session(session_id);
++  rime->clear_composition(session_id);
 +}
 +
-+RIME_API RimeApi *RimeInit(int argc, char *argv[]){
++void select_candidate(int client_fd, RimeApi *rime, RimeSessionId session_id, char *key_buff) {
++  char real_key_buff[KEY_BUFFER_SIZE];
++  char index[CANDIDATES_INDEX_BUFFER_SIZE];
++  int index_ix = 0;
++  int candidate_start = -1;
++  for (int i=1; i < strlen(key_buff); i++) {
++    if (candidate_start == -1) {
++      if (key_buff[i] == ' ') {
++        candidate_start = 0;
++        real_key_buff[i-1] = '\0';
++      } else {
++        real_key_buff[i-1] = key_buff[i];
++      }
++    } else if (candidate_start == 0) {
++      if (key_buff[i] == ' ') {
++        candidate_start = i + 1;
++        index[index_ix] = '\0';
++        break;
++      } else {
++        index[index_ix] = key_buff[i];
++        index_ix += 1;
++      }
++    }
++  }
++  int num = std::stoi(index);
++  fprintf(stderr, "%s:  %d => %s", real_key_buff, num, &key_buff[candidate_start]);
++  rime->simulate_key_sequence(session_id, real_key_buff);
++  RimeCandidateListIterator iterator = {0};
++  if (rime->candidate_list_begin(session_id, &iterator))
++  {
++    int count = 0;
++    while (rime->candidate_list_next(&iterator) && count <= num)
++    {
++      fprintf(stderr, "candidate %d -> %s \n", count, iterator.candidate.text);
++      if (strcmp(&key_buff[candidate_start], iterator.candidate.text) == 0) {
++        fprintf(stderr, "report candidate %d -> %s \n", count, iterator.candidate.text);
++        rime->select_candidate(session_id, count);
++        break;
++      }
++      count += 1;
++    }
++    rime->candidate_list_end(&iterator);
++  }
++  rime->clear_composition(session_id);
++}
++
++void switch_schema(RimeApi *rime, RimeSessionId session_id, char *schema_id) {
++  RimeSchemaList list;
++  if (rime->get_schema_list(&list)) {
++    for (size_t i = 0; i < list.size; ++i) {
++      if (!strcmp(schema_id, list.list[i].schema_id)) {
++        rime->select_schema(session_id, schema_id);
++        set_active_schema(schema_id);
++        break;
++      }
++    }
++    rime->free_schema_list(&list);
++  }
++}
++
++void send_current_schema(int client_fd, RimeApi *rime, RimeSessionId session_id) {
++  char current[SCHEMA_ID_SIZE] = {0};
++  rime->get_current_schema(session_id, current, sizeof(current));
++  send(client_fd, current, strlen(current), 0);
++}
++
++void send_algebra(int client_fd, ConfigMapEntryRef algebra_list) { 
++  for (size_t i = 0; i < algebra_list.size(); ++i) {
++    char item[ALGEBRA_ITEM_SIZE];
++    strcpy(item, algebra_list[i].ToString().c_str());
++    fprintf(stderr, "%s \n", item);
++    if (!strncmp(item, derive, strlen(derive))) {
++      send(client_fd, item, strlen(item), 0);
++      send(client_fd, "\n", 1, 0);
++    }
++  }
++}
++
++void build_custom_yaml_fp(char *fp, RimeApi *rime, RimeSessionId session_id) {
++  char schema_id[SCHEMA_ID_SIZE] = {0};
++  rime->get_current_schema(session_id, schema_id, sizeof(schema_id));
++  strcpy(fp, schema_id);
++  strcat(fp, ".custom.yaml");
++}
++
++int handle_request(int client_fd, RimeApi *rime, RimeSessionId session_id) {
++  char read_buff[READ_BUFFER_SIZE];
++  char key_buff[KEY_BUFFER_SIZE];
++  
++  int key_size = 0;
++  int read_bytes = recv(client_fd, read_buff, READ_BUFFER_SIZE, 0);
++
++  int body_size = 0;
++  bool ix_body_start = false;
++  for (int i=0; i < read_bytes-3; i++) {
++    if (ix_body_start) {
++      if (1) {
++        key_buff[key_size] = read_buff[i+3];
++        key_size += 1;
++      }
++    } else if (
++      read_buff[i] == '\r' && read_buff[i+1] == '\n'
++      && read_buff[i+2] == '\r' && read_buff[i+3] == '\n'
++    ) {
++      ix_body_start = true;
++    }
++  }
++  key_buff[key_size] = '\0';
++
++  send(client_fd, header, strlen(header), 0);
++  send(client_fd, "\r\n", 2, 0);
++
++  fprintf(stderr, "key:: %s\n", key_buff);
++  if (key_buff[0] == '=') {
++    const char* kSetSchema = "=schema=";
++    const char* kShowSchema = "=schema";
++
++    const char* kRemoveAlgebra = "=algebra-";
++    const char* kAddAlgebra = "=algebra+";
++    const char* kShowAlgebra = "=algebra";
++
++    if (!strcmp(key_buff, kShowSchema)) {
++      send_current_schema(client_fd, rime, session_id);
++    } else if (!strncmp(key_buff, kSetSchema, strlen(kSetSchema))) {
++      char *schema_id = &key_buff[strlen(kSetSchema)];
++      switch_schema(rime, session_id, schema_id);
++      send_current_schema(client_fd, rime, session_id);
++    } else if (!strcmp(key_buff, kShowAlgebra)) {
++      char fp[FILE_PATH_SIZE];
++      build_custom_yaml_fp(fp, rime, session_id);
++      Config config;
++      if (!config.LoadFromFile(fp)) {
++        fprintf(stderr, "can not find file %s\n", fp);
++        return 0;
++      }
++      ConfigMapEntryRef algebra_list(config["patch"]["speller/algebra"]);
++      send_algebra(client_fd, algebra_list);
++
++    } else if(!strncmp(key_buff, kAddAlgebra, strlen(kAddAlgebra))) {
++      char *new_item = &key_buff[strlen(kAddAlgebra)];
++      std::cerr << new_item << std::endl;
++      if (strncmp(new_item, derive, strlen(derive))) {
++        return 0;
++      }
++      std::cerr << "fp" << std::endl;
++      char fp[FILE_PATH_SIZE];
++      build_custom_yaml_fp(fp, rime, session_id);
++
++      Config config;
++      if (!config.LoadFromFile(fp)) {
++        fprintf(stderr, "can not find file %s\n", fp);
++        return 0;
++      }
++      ConfigMapEntryRef algebra_list(config["patch"]["speller/algebra"]);      
++
++      int add_item = 1;
++      for (size_t i = 0; i < algebra_list.size(); ++i) {
++        char item[ALGEBRA_ITEM_SIZE];
++        strcpy(item, algebra_list[i].ToString().c_str());
++        if (!strcmp(item, new_item)) {
++          add_item = 0;
++        }
++      }
++      if (add_item) {
++        algebra_list[algebra_list.size()] = new_item;
++
++        if (!config.SaveToFile(fp)) {
++          LOG(ERROR) << "failed to save schema list";
++          return 0;
++        }
++        std::cerr << "algebra_list" << std::endl;
++      }
++      send_algebra(client_fd, algebra_list);
++
++      return add_item;
++    } else if (!strncmp(key_buff, kRemoveAlgebra, strlen(kRemoveAlgebra))) {
++      char *new_item = &key_buff[strlen(kRemoveAlgebra)];
++      if (strncmp(new_item, derive, strlen(derive))) {
++        return 0;
++      }
++
++      char fp[FILE_PATH_SIZE];
++      build_custom_yaml_fp(fp, rime, session_id);
++
++      Config config;
++      if (!config.LoadFromFile(fp)) {
++        std::cerr << "can not find file" << std::endl;
++        return 0;
++      }
++
++      ConfigMapEntryRef algebra_list(config["patch"]["speller/algebra"]);
++
++      int remove_item = 0;
++      for (size_t i = 0; i < algebra_list.size(); ++i) {
++        char item[ALGEBRA_ITEM_SIZE];
++        strcpy(item, algebra_list[i].ToString().c_str());
++        if (!strcmp(item, new_item)) {
++          remove_item += 1;
++          algebra_list[i].Clear();
++        }
++      }
++     
++      if (remove_item) {        
++        if (!config.SaveToFile(fp)) {
++          LOG(ERROR) << "failed to save schema list.";
++          return 0;
++        }
++        std::cerr << "algebra_list" << std::endl;
++      }
++      send_algebra(client_fd, algebra_list);
++
++      return remove_item;
++    }
++  } else if (key_buff[0] == '@') {
++    select_candidate(client_fd, rime, session_id, key_buff);
++    return 0;
++  } else {
++    send_candidates(client_fd, rime, session_id, key_buff);
++    return 0;
++  }
++}
++
++
++RIME_API RimeApi *RimeInit() {
 +  RimeApi *rime = rime_get_api();
 +
 +  RIME_STRUCT(RimeTraits, traits);
 +  traits.app_name = "rime.server";
-+    traits.user_data_dir = argv[1];
-+    traits.shared_data_dir = argv[1];
 +
 +  rime->setup(&traits);
-+
-+  rime->set_notification_handler(&on_message, NULL);
 +  rime->initialize(NULL);
 +  Bool full_check = True;
-+  if (rime->start_maintenance(full_check))
++  if (rime->start_maintenance(full_check)) {
 +    rime->join_maintenance_thread();
++  }
 +
++  std::cerr << "rime api ready." << std::endl;
 +  return rime;
 +}
 +
-+int main(int argc, char *argv[]){
-+  RimeApi *rime = RimeInit(argc, argv);
++int RimeUpdate() {
++  Deployer deployer;
++  InstallationUpdate installation;
++  if (!installation.Run(&deployer)) {
++    std::cerr << "failed to initialize installation." << std::endl;
++    return 1;
++  }
++  std::cerr << "initializing...";
++  WorkspaceUpdate workspace_update;
++  if (!workspace_update.Run(&deployer)) {
++    std::cerr << "failure!" << std::endl;
++    return 1;
++  }
++  std::cerr << "ready." << std::endl;
 +
++  return 0;
++}
++
++void testRime(RimeApi *rime, RimeSessionId session_id) {
++  char test[] = "ab";
++  rime->simulate_key_sequence(session_id, test);
++  RimeCandidateListIterator iterator = {0};
++  if (rime->candidate_list_begin(session_id, &iterator))
++  {
++    int count = 0;
++    while (rime->candidate_list_next(&iterator) && count <= CANDIDATES_SIZE)
++    {
++      count += 1;
++    }
++    rime->candidate_list_end(&iterator);
++  }
++  rime->clear_composition(session_id);
++}
++
++
++int main(int argc, char *argv[]) {
++  if (argc > 1) {
++    chdir(argv[1]);
++  }
++  RimeApi *rime = RimeInit();
++  RimeUpdate();
++  std::cerr << "create session" << std::endl;
++  RimeSessionId session_id = rime->create_session();
++  testRime(rime, session_id);
 +  int port = 12345;
 +
 +  int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-+  if (server_fd < 0)
-+    return -1;
++  if (server_fd < 0) return -1;
 +
 +  struct sockaddr_in sa;
 +  int addrlen = sizeof(sa);
@@ -170,18 +440,23 @@ index 0000000..5da9ea1
 +
 +  int opt_val = 1;
 +  setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof opt_val);
-+  if (bind(server_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0)
-+    return -1;
-+  if (listen(server_fd, SOMAXCONN) < 0)
-+    return -1;
++  if (bind(server_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) return -1;
++  if (listen(server_fd, SOMAXCONN) < 0) return -1;
 +
 +  int client_fd;
++  int reponse_result;
 +
-+  while (true)
-+  {
++  while (1) {
 +    client_fd = accept(server_fd, (struct sockaddr *)&sa, (socklen_t *)&addrlen);
-+    handle_request(client_fd, rime);
++    reponse_result = handle_request(client_fd, rime, session_id);
 +    close(client_fd);
++
++    if (reponse_result == 1) {
++      if (RimeUpdate()) {
++         std::cerr << "rime configure deploy failed" << std::endl;
++      }
++      session_id = rime->create_session();
++    }
 +  }
 +  return 0;
 +}
