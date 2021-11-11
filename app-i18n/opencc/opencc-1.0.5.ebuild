@@ -27,7 +27,7 @@ fi
 # deps/tclap-1.2.1: MIT
 LICENSE="Apache-2.0 BSD-2 MIT test? ( BSD )"
 SLOT="0/2"
-KEYWORDS="amd64 arm64 ~hppa ppc ppc64 sparc x86"
+KEYWORDS="amd64 arm64 ~hppa ppc ppc64 sparc x86 arm"
 IUSE="doc test"
 RESTRICT="!test? ( test )"
 
@@ -49,10 +49,23 @@ PATCHES=(
 DOCS=(AUTHORS NEWS.md README.md)
 
 src_prepare() {
+
         cros_enable_cxx_exceptions
 	cmake_src_prepare
 
 	sed -e "s:\${DIR_SHARE_OPENCC}/doc:share/doc/${PF}:" -i doc/CMakeLists.txt || die
+	
+
+	if [[ "${ARCH}" == "arm" ]]; then
+	   SED_OPTION="s/\${QEMU_RUN_COMMAND}/qemu-arm -L \/usr\/${CHOST}/g"
+	   sed -i "${SED_OPTION}" data/CMakeLists.txt
+	fi
+
+	if [[ "${ARCH}" == "arm64" ]]; then
+           SED_OPTION="s/\${QEMU_RUN_COMMAND}/qemu-aarch64 -L \/usr\/${CHOST}/g"
+           sed -i "${SED_OPTION}" data/CMakeLists.txt
+	fi
+	
 }
 
 src_configure() {

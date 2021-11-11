@@ -22,7 +22,7 @@ fi
 
 LICENSE="BSD"
 SLOT="0/1-${PV}"
-KEYWORDS="amd64 arm64 ~ppc ~ppc64 x86"
+KEYWORDS="amd64 arm64 ~ppc ~ppc64 x86 arm"
 IUSE="debug test"
 RESTRICT="!test? ( test )"
 
@@ -46,7 +46,7 @@ src_prepare() {
         cros_enable_cxx_exceptions
 	eapply "${FILESDIR}/${PN}-1.6.0-boost-1.76.patch"
 	eapply "${FILESDIR}/${PN}-server.patch"
-
+	
 	# Use headers of dev-libs/darts, dev-libs/utfcpp and x11-base/xorg-proto.
 	sed -e "/\${PROJECT_SOURCE_DIR}\/thirdparty/d" -i CMakeLists.txt || die
 	rm -r thirdparty || die
@@ -70,6 +70,9 @@ src_configure() {
 		-DENABLE_EXTERNAL_PLUGINS=ON
 		-DINSTALL_PRIVATE_HEADERS=ON
 	)
-
+	
+	scp ${FILESDIR}/capnproto/tools/* ${S}/tools/
+	scp ${FILESDIR}/capnproto/proto/* ${S}/proto/
 	cmake_src_configure
+
 }

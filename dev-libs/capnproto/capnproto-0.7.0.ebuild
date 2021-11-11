@@ -11,7 +11,7 @@ SRC_URI="https://github.com/sandstorm-io/capnproto/archive/v${PV}.tar.gz -> ${P}
 
 LICENSE="MIT"
 SLOT="0/070"
-KEYWORDS="amd64 ~arm arm64 x86"
+KEYWORDS="amd64 arm arm64 x86"
 IUSE="+ssl static-libs test"
 RESTRICT="!test? ( test )"
 
@@ -20,8 +20,10 @@ DEPEND="${RDEPEND} test? ( dev-cpp/gtest )"
 
 S=${WORKDIR}/${P}/c++
 
+
 src_prepare() {
         cros_enable_cxx_exceptions
+	
 	sed -e 's/ldconfig/true/' -i Makefile.am || die
 	sed -e 's#gtest/lib/libgtest.la gtest/lib/libgtest_main.la#-lgtest -lgtest_main#' -i Makefile.am || die
 	default
@@ -31,7 +33,8 @@ src_prepare() {
 src_configure() {
 	econf \
 		$(use_enable static-libs static) \
-		$(use_with ssl openssl)
+		$(use_with ssl openssl) --with-external-capnp
+
 }
 
 src_install() {

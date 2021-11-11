@@ -1,5 +1,5 @@
 diff --git a/data/CMakeLists.txt b/data/CMakeLists.txt
-index 1516775..22fbcb7 100644
+index 1516775..3fbd77b 100644
 --- a/data/CMakeLists.txt
 +++ b/data/CMakeLists.txt
 @@ -1,4 +1,4 @@
@@ -8,3 +8,12 @@ index 1516775..22fbcb7 100644
  set(DICT_MERGE_BIN python ${CMAKE_CURRENT_SOURCE_DIR}/scripts/merge.py)
  set(DICT_REVERSE_BIN python ${CMAKE_CURRENT_SOURCE_DIR}/scripts/reverse.py)
  set(DICT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dictionary)
+@@ -112,7 +112,7 @@ foreach(DICT ${DICTS})
+     COMMAND
+       ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:libopencc>" "$<TARGET_FILE_DIR:${OPENCC_DICT_BIN}>"
+     COMMAND
+-      ${OPENCC_DICT_BIN}
++       ${QEMU_RUN_COMMAND} ${OPENCC_DICT_BIN}
+         --input ${DICT_${DICT}_INPUT}
+         --output ${DICT}.ocd
+         --from text
