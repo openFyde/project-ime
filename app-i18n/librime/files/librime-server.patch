@@ -76,11 +76,10 @@ index 4ea9241..9b7b252 100644
       DESTINATION ${EXECUTABLE_OUTPUT_PATH})
 diff --git a/tools/rime_server.cc b/tools/rime_server.cc
 new file mode 100644
-index 0000000..4482e81
+index 0000000..3ce4542
 --- /dev/null
 +++ b/tools/rime_server.cc
-@@ -0,0 +1,424 @@
-+#include <math.h>
+@@ -0,0 +1,414 @@
 +#include <stdio.h>
 +#include <stdlib.h>
 +#include <string.h>
@@ -102,15 +101,14 @@ index 0000000..4482e81
 +using namespace rime;
 +
 +#define READ_BUFFER_SIZE 1024
-+#define KEY_BUFFER_SIZE 128
++#define KEY_BUFFER_SIZE 256
 +
-+#define CANDIDATES_SIZE 100
++#define CANDIDATES_SIZE 128
 +
 +#define SCHEMA_ID_SIZE 64
 +#define FILE_PATH_SIZE 256
 +#define ALGEBRA_ITEM_SIZE 64
-+
-+int CANDIDATES_INDEX_BUFFER_SIZE = (int)(log10(CANDIDATES_SIZE) + 2);
++#define EXTRA_FIND 16
 +
 +const char* derive = "derive";
 +
@@ -188,47 +186,56 @@ index 0000000..4482e81
 +}
 +
 +void select_candidate(int client_fd, RimeApi *rime, RimeSessionId session_id, char *key_buff) {
-+  char real_key_buff[KEY_BUFFER_SIZE];
-+  char index[CANDIDATES_INDEX_BUFFER_SIZE];
-+  int index_ix = 0;
-+  int candidate_start = -1;
-+  for (int i=1; i < strlen(key_buff); i++) {
-+    if (candidate_start == -1) {
-+      if (key_buff[i] == ' ') {
-+        candidate_start = 0;
-+        real_key_buff[i-1] = '\0';
-+      } else {
-+        real_key_buff[i-1] = key_buff[i];
++  const char line_spliter[2] = "\n";
++  int ix_token = 0;
++  char * token = strtok(key_buff, line_spliter);
++  
++  while( token != NULL ) {
++    char* context = NULL;
++  
++    char source[KEY_BUFFER_SIZE];
++    char index[KEY_BUFFER_SIZE];
++    char candidate[KEY_BUFFER_SIZE];
++
++    int ix_var = 0;
++    char *var = strtok_r(token, " ", &context);
++    
++    while ( var != NULL && ix_var < 3) {  
++      if (ix_var == 0) {
++        strcpy(source, var);
++      } else if (ix_var == 1) {
++        strcpy(index, var);
++      } else if (ix_var == 2) {
++        strcpy(candidate, var);
 +      }
-+    } else if (candidate_start == 0) {
-+      if (key_buff[i] == ' ') {
-+        candidate_start = i + 1;
-+        index[index_ix] = '\0';
-+        break;
-+      } else {
-+        index[index_ix] = key_buff[i];
-+        index_ix += 1;
-+      }
++      var = strtok_r(NULL, " ", &context );
++      ix_var += 1;
 +    }
-+  }
-+  int num = std::stoi(index);
-+  fprintf(stderr, "%s:  %d => %s", real_key_buff, num, &key_buff[candidate_start]);
-+  rime->simulate_key_sequence(session_id, real_key_buff);
-+  RimeCandidateListIterator iterator = {0};
-+  if (rime->candidate_list_begin(session_id, &iterator))
-+  {
-+    int count = 0;
-+    while (rime->candidate_list_next(&iterator) && count <= num)
-+    {
-+      fprintf(stderr, "candidate %d -> %s \n", count, iterator.candidate.text);
-+      if (strcmp(&key_buff[candidate_start], iterator.candidate.text) == 0) {
-+        fprintf(stderr, "report candidate %d -> %s \n", count, iterator.candidate.text);
-+        rime->select_candidate(session_id, count);
-+        break;
++
++    if (ix_var == 3) {
++      int num = std::stoi(index);
++      
++      if (ix_token == 0) {
++        rime->simulate_key_sequence(session_id, source);
 +      }
-+      count += 1;
++
++       RimeCandidateListIterator iterator = {0};
++      if (rime->candidate_list_begin(session_id, &iterator))
++      {
++        int count = 0;
++        while (rime->candidate_list_next(&iterator) && count <= num+EXTRA_FIND)
++        {
++          if (strcmp(candidate, iterator.candidate.text) == 0) {
++            rime->select_candidate(session_id, count);
++            break;
++          }
++          count += 1;
++        }
++      }
++      rime->candidate_list_end(&iterator);
 +    }
-+    rime->candidate_list_end(&iterator);
++    token = strtok(NULL, line_spliter);
++    ix_token += 1; 
 +  }
 +  rime->clear_composition(session_id);
 +}
@@ -401,7 +408,7 @@ index 0000000..4482e81
 +      return remove_item;
 +    }
 +  } else if (key_buff[0] == '@') {
-+    select_candidate(client_fd, rime, session_id, key_buff);
++    select_candidate(client_fd, rime, session_id, &key_buff[1]);
 +    return 0;
 +  } else {
 +    send_candidates(client_fd, rime, session_id, key_buff);
@@ -445,22 +452,6 @@ index 0000000..4482e81
 +  return 0;
 +}
 +
-+void testRime(RimeApi *rime, RimeSessionId session_id) {
-+  char test[] = "ab";
-+  rime->simulate_key_sequence(session_id, test);
-+  RimeCandidateListIterator iterator = {0};
-+  if (rime->candidate_list_begin(session_id, &iterator))
-+  {
-+    int count = 0;
-+    while (rime->candidate_list_next(&iterator) && count <= CANDIDATES_SIZE)
-+    {
-+      count += 1;
-+    }
-+    rime->candidate_list_end(&iterator);
-+  }
-+  rime->clear_composition(session_id);
-+}
-+
 +
 +int main(int argc, char *argv[]) {
 +  if (argc > 1) {
@@ -470,7 +461,6 @@ index 0000000..4482e81
 +  RimeUpdate();
 +  std::cerr << "create session" << std::endl;
 +  RimeSessionId session_id = rime->create_session();
-+  testRime(rime, session_id);
 +  int port = 12345;
 +
 +  int server_fd = socket(AF_INET, SOCK_STREAM, 0);
