@@ -29360,7 +29360,7 @@ Controller.prototype.registerEventHandler_ = function() {
           this.onVisibilityChange_).
       listen(this.adapter_, EventType.SETTINGS_READY, this.onSettingsReady_).
       listen(this.adapter_, EventType.UPDATE_SETTINGS, this.onUpdateSettings_).
-      listen(this.adapter_, EventType.FRONT_f,
+      listen(this.adapter_, EventType.FRONT_TOGGLE_LANGUAGE_STATE,
           this.onUpdateToggleLanguageState_).
       listen(this.adapter_, EventType.VOICE_STATE_CHANGE,
           this.onVoiceStateChange_).
@@ -30507,7 +30507,7 @@ Controller.prototype.switchToKeyset = function(keyset) {
       this.title_, this.adapter_.isPasswordBox(), this.adapter_.isA11yMode,
       keyset, this.contextTypeToLastKeysetMap_[contextType] ||
       this.getActiveKeyset_(), this.languageCode_);
-  if (!this.isSubKeyset_(this.currentKeysfet_, keyset) &&
+  if (!this.isSubKeyset_(this.currentKeyset_, keyset) &&
       keyset != Controller.EMOJI_VIEW_CODE_ &&
       !this.adapter_.isHotrod) {
     this.contextTypeToKeysetMap_[this.currentInputMethod_][contextType] =

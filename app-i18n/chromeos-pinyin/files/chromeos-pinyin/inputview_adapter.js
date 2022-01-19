@@ -63,31 +63,6 @@ function registerFunction(path, opt_fn) {
 }
 
 /**
- * The chrome.i18n API is not compatible with component extensions due to the
- * way component extensions are loaded (crbug/66834).
- */
-function overrideGetMessage() {
-  var originalGetMessage = chrome.i18n.getMessage;
-
-  /**
-   * Localize a string resource.
-   * @param {string} key The message key to localize.
-   * @return {string} Translated resource.
-   */
-  chrome.i18n.getMessage = function(key) {
-    if (key.startsWith('@@'))
-      return originalGetMessage(key);
-
-    // TODO(kevers): Add support for other locales.
-    var table = i18n.input.chrome.inputview.TranslationTable;
-    var entry = table[key];
-    if (!entry)
-      entry = table[key.toLowerCase()];
-    return entry ? entry.message || '' : '';
-  };
-};
-
-/**
  * Overrides call to switch keysets in order to catch when the keyboard
  * is ready for input. Used to synchronize the start of automated
  * virtual keyboard tests.
@@ -414,8 +389,7 @@ window.onload = function() {
   // get backgroundWindow before init virtual keyboard
   chrome.runtime.getBackgroundPage(function(w) {
     backgroundWindow = w;
-
-    overrideGetMessage();
+    
     overrideSwitchToKeyset();
     overrideGetSpatialData();
     registerInputviewApi();

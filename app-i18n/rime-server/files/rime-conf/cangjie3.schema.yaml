@@ -2,7 +2,7 @@
 # encoding: utf-8
 
 schema:
-  schema_id: cangjie5
+  schema_id: cangjie3
   name: 倉頡五代
   version: "0.30"
   author:
