@@ -1,0 +1,45 @@
+{
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDSRMbBa14C/G45ow3CZvJlP7Nx3imrrj59+gWo7NzNdbtkQcne9HjTcmh3ALIHWtcDZ6fBiENBir9746MsgwC0h9yVg9BsgJJelLd7NV3hb6VXcPh9YFCKt6maLviENv1oApmMpY86wHifMiGr7WxR72T21V1RQQzetNTcQC3tvwIDAQAB",
+  "name": "Chinese RIME",
+  "version": "1.0.0.0",
+  "description": "RIME for Chromium OS.",
+  "default_locale": "en",
+  "permissions": [
+    "accessibilityFeatures.read",
+    "app.window.alpha",
+    "app.window.alwaysOnTop",
+    "app.window.ime",
+    "audioCapture",
+    "crashReportPrivate",
+    "input",
+    "inputMethodPrivate",
+    "metricsPrivate",
+    "system.display",
+    "tabs",
+    "tts",
+    "unlimitedStorage",
+    "virtualKeyboardPrivate"
+  ],
+  "background": {
+    "page": "backgroundpage.html"
+  },
+  "ime_path": "/usr/share/chromeos-assets/input_methods/pinyin",
+  "input_components": [
+    {
+      "name": "__MSG_inputmethod_rime__",
+      "id": "zh-rime",
+      "indicator": "真",
+      "language": [
+        "zh-CN",
+        "zh"
+      ],
+      "layouts": [
+        "us"
+      ],
+      "input_view": "inputview.html"
+    }
+  ],
+  
+  "options_page": "option.html",
+  "manifest_version": 2
+}
