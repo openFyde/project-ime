@@ -181,7 +181,11 @@ function registerInputviewApi() {
    * @private
    */
   function getKeyboardConfig_(callback) {
-    chrome.virtualKeyboardPrivate.getKeyboardConfig(callback);
+    chrome.virtualKeyboardPrivate.getKeyboardConfig(function (conf) {
+      conf.a11ymode = false;
+      conf.hotrodmode = false;
+      callback(conf);
+    });
   }
 
   /**
@@ -359,7 +363,6 @@ function registerInputviewApi() {
     return true;
   });
 }
-
 
 if (!chrome.i18n) {
   chrome.i18n = {};
