@@ -357,12 +357,13 @@ function registerInputviewApi() {
   // connect to rime extention backgroundWindow
   var defaultSendMessage = registerFunction('chrome.runtime.sendMessage');
   registerFunction('chrome.runtime.sendMessage', function(message) {
+
     if (message.type == 'send_key_event') {
       sendKeyEvent_(message.keyData);
     } else if (message.type == 'select_candidate') {
       backgroundWindow.imeBackground.controller_.model.selectCandidate(message.candidate.ix);
     } else if (message.type == 'connect' || message.type == 'visibility_change') {
-      if (message.visibility = true) {
+      if (message.visibility) {
         backgroundWindow.imeBackground.vk_enable = true;
       } else {
         backgroundWindow.imeBackground.vk_enable = false;
