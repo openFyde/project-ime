@@ -77,6 +77,9 @@ function overrideSwitchToKeyset() {
       // The second resize call forces a clean layout for chrome://keyboard.
       controller.resize(false);
       controller.resize(true);
+
+      chrome.virtualKeyboardPrivate.setHitTestBounds([{left: 0, top: 0, width: window.innerWidth, height: window.innerHeight}]);
+
       var settings = controller.model_.settings;
       settings.supportCompact = true;
       if (keysetChangeListener_ &&
@@ -184,6 +187,11 @@ function registerInputviewApi() {
     chrome.virtualKeyboardPrivate.getKeyboardConfig(function (conf) {
       conf.a11ymode = false;
       conf.hotrodmode = false;
+
+      if (!(window.innerHeight == 0 && window.innerWidth == window.screen.width)) {
+        //conf.features.push("floatingvirtualkeyboard-enabled");
+      }
+      console.log(conf);
       callback(conf);
     });
   }
@@ -220,7 +228,7 @@ function registerInputviewApi() {
    * @private
    */
   function getDisplayInInches_(callback) {
-    callback(0);
+    callback(27);
   }
 
   /**
@@ -242,8 +250,9 @@ function registerInputviewApi() {
    * @private
    */
   function switchToInputMethod_(inputMethodId) {
-    if (chrome.inputMethodPrivate)
+    if (chrome.inputMethodPrivate) {
       chrome.inputMethodPrivate.setCurrentInputMethod(inputMethodId)
+    }
   }
 
   /**
@@ -322,6 +331,11 @@ function registerInputviewApi() {
     return 0;
   }
 
+  function setMode_(mode) {
+    console.log(mode);
+    return true;
+  }
+
   window.inputview = {
     commitText: commitText_,
     getKeyboardConfig: getKeyboardConfig_,
@@ -330,7 +344,8 @@ function registerInputviewApi() {
     getInputMethodConfig: getInputMethodConfig_,
     switchToInputMethod: switchToInputMethod_,
     getDisplayInInches: getDisplayInInches_,
-    openSettings: openSettings_
+    openSettings: openSettings_,
+    setMode: setMode_,    
   };
 
   registerFunction('chrome.input.ime.hideInputView', function() {
@@ -347,6 +362,8 @@ function registerInputviewApi() {
     } else if (message.type == 'select_candidate') {
       backgroundWindow.imeBackground.controller_.model.selectCandidate(message.candidate.ix);
     } else if (message.type == 'connect' || message.type == 'visibility_change') {
+      console.log(window.screenX, window.screenY);
+      console.log(window.innerHeight, window.innerWidth);
       if (message.visibility = true) {
         backgroundWindow.imeBackground.vk_enable = true;
       } else {
@@ -375,40 +392,45 @@ if (!chrome.i18n) {
  * Trigger loading the virtual keyboard on completion of page load.
  */
 window.onload = function() {
-  var params = {};
-  var matches = window.location.href.match(/[#?].*$/);
-  if (matches && matches.length > 0) {
-    matches[0].slice(1).split('&').forEach(function(s) {
-      var pair = s.split('=');
-      params[pair[0]] = pair[1];
-    });
-  }
-
-  var keyset = "pinyin-zh-CN.compact.qwerty";
-  var languageCode = 'zh-CN';
-  var passwordLayout = 'pinyin-zh-CN.en.compact.qwerty';
-  var name = params['inputmethod_pinyin'];
-  
-  // get backgroundWindow before init virtual keyboard
-  chrome.runtime.getBackgroundPage(function(w) {
-    backgroundWindow = w;
-    
-    overrideSwitchToKeyset();
-    overrideGetSpatialData();
-    registerInputviewApi();
-    i18n.input.chrome.inputview.Controller.DEV = true;
-    i18n.input.chrome.inputview.Adapter.prototype.isSwitching = function() {
-      return false;
-    };
-
-    if (keyset != 'none') {
-      window.initializeVirtualKeyboard(keyset, languageCode, passwordLayout,
-          name);
+  chrome.virtualKeyboardPrivate.setContainerBehavior({mode: "FULL_WIDTH", bounds: {left: 0, top: 0, width: window.screen.width, height: 0}}, function () {
+    var params = {};
+    var matches = window.location.href.match(/[#?].*$/);
+    if (matches && matches.length > 0) {
+      matches[0].slice(1).split('&').forEach(function(s) {
+        var pair = s.split('=');
+        params[pair[0]] = pair[1];
+      });
     }
-  })
 
-  
+    var keyset = "pinyin-zh-CN.compact.qwerty";
+    var languageCode = 'zh-CN';
+    var passwordLayout = 'pinyin-zh-CN.en.compact.qwerty';
+    var name = params['inputmethod_pinyin'];
+
+    
+    window.resizeTo(window.screen.width, 372);
+    window.moveTo(0, window.screen.height - 372);
+    
+    // get backgroundWindow before init virtual keyboard
+    chrome.runtime.getBackgroundPage(function(w) {
+      backgroundWindow = w;
+      
+      overrideSwitchToKeyset();
+      overrideGetSpatialData();
+      registerInputviewApi();
+      i18n.input.chrome.inputview.Controller.DEV = true;
+      i18n.input.chrome.inputview.Adapter.prototype.isSwitching = function() {
+        return false;
+      };
+
+      if (keyset != 'none') {
+        window.initializeVirtualKeyboard(keyset, languageCode, passwordLayout,
+            name);
+      }
+    })
+  });
 };
+
 
 /**
  * Run cleanup tasks.
