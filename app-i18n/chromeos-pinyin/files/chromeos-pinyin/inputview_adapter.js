@@ -298,7 +298,7 @@ function registerInputviewApi() {
   function setState (state) {
     var config = backgroundWindow.imeBackground.controller_.configFactory.getCurrentConfig();
     if (state != config.states['lang'].value) {
-      backgroundWindow.imeBackground.controller_.switchInputToolState('lang');
+      backgroundWindow.imeBackground.controller_.switchInputToolState('lang', true);
     }
   }
 
@@ -362,8 +362,6 @@ function registerInputviewApi() {
     } else if (message.type == 'select_candidate') {
       backgroundWindow.imeBackground.controller_.model.selectCandidate(message.candidate.ix);
     } else if (message.type == 'connect' || message.type == 'visibility_change') {
-      console.log(window.screenX, window.screenY);
-      console.log(window.innerHeight, window.innerWidth);
       if (message.visibility = true) {
         backgroundWindow.imeBackground.vk_enable = true;
       } else {
