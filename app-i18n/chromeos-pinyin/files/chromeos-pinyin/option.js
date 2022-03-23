@@ -17,6 +17,9 @@ async function setSchema(schema) {
       body: body
     });
   let text = await response.text();
+  window.localStorage.setItem("schema", text);
+  window.localStorage.setItem("schema_change", "true");
+
   if (text == schema) {
     console.log(schema);
     location.reload();
