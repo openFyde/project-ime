@@ -1,0 +1,1 @@
+librime-1.7.3-r1.ebuild
