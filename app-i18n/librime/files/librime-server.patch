@@ -76,10 +76,10 @@ index 4ea9241..9b7b252 100644
       DESTINATION ${EXECUTABLE_OUTPUT_PATH})
 diff --git a/tools/rime_server.cc b/tools/rime_server.cc
 new file mode 100644
-index 0000000..3ce4542
+index 0000000..7130be7
 --- /dev/null
 +++ b/tools/rime_server.cc
-@@ -0,0 +1,414 @@
+@@ -0,0 +1,417 @@
 +#include <stdio.h>
 +#include <stdlib.h>
 +#include <string.h>
@@ -486,10 +486,13 @@ index 0000000..3ce4542
 +    close(client_fd);
 +
 +    if (reponse_result == 1) {
++      char current[SCHEMA_ID_SIZE] = {0};
++      rime->get_current_schema(session_id, current, sizeof(current));
 +      if (RimeUpdate()) {
 +         std::cerr << "rime configure deploy failed" << std::endl;
 +      }
 +      session_id = rime->create_session();
++      switch_schema(rime, session_id, current);
 +    }
 +  }
 +  return 0;
