@@ -9,6 +9,8 @@ WANT_LIBTOOL="none"
 
 inherit autotools
 
+RESTRICT="binchecks"
+
 if [[ "${PV}" == "9999" ]]; then
 	inherit git-r3
 

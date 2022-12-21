@@ -32,7 +32,7 @@ LICENSE="Apache-2.0 BSD-2 MIT test? ( BSD )"
 SLOT="0/2"
 KEYWORDS="amd64 arm64 ~hppa ppc ppc64 sparc x86 arm"
 IUSE="doc test"
-RESTRICT="!test? ( test )"
+RESTRICT="!test? ( test ) arm? ( binchecks )"
 
 BDEPEND="${PYTHON_DEPS}
 	doc? ( app-doc/doxygen )"

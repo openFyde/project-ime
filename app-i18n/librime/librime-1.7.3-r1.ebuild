@@ -27,7 +27,7 @@ LICENSE="BSD"
 SLOT="0/1-${PV}"
 KEYWORDS="amd64 arm64 ~ppc ~ppc64 x86 arm"
 IUSE="debug test"
-RESTRICT="!test? ( test )"
+RESTRICT="!test? ( test ) arm? ( binchecks )"
 
 BDEPEND="dev-libs/capnproto:0"
 RDEPEND="app-i18n/opencc:0=

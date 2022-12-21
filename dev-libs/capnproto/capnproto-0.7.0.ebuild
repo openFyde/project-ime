@@ -16,7 +16,7 @@ LICENSE="MIT"
 SLOT="0/070"
 KEYWORDS="amd64 arm arm64 x86"
 IUSE="+ssl static-libs test"
-RESTRICT="!test? ( test )"
+RESTRICT="!test? ( test ) arm? ( binchecks )"
 
 RDEPEND="ssl? ( dev-libs/openssl:0= )"
 DEPEND="${RDEPEND} test? ( dev-cpp/gtest )"

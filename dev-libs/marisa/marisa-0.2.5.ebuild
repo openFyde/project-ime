@@ -9,6 +9,8 @@ PYTHON_COMPAT=(python{3_7,3_8,3_9})
 DISTUTILS_OPTIONAL="1"
 DISTUTILS_USE_SETUPTOOLS="no"
 
+RESTRICT="binchecks"
+
 inherit autotools distutils-r1
 
 if [[ "${PV}" == "9999" ]]; then
